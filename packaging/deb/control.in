@@ -1,0 +1,12 @@
+Package: msearch
+Version: 0.4.0
+Section: utils
+Priority: optional
+Architecture: arm64
+Depends: libqt5core5a (>= 5.12), libqt5gui5 (>= 5.12), libqt5widgets5 (>= 5.12), libc6
+Recommends: libqt5x11extras5
+Maintainer: MSearch Contributors <msearch@localhost>
+Description: Fast filename search utility for Linux
+ MSearch is an Everything-like desktop tool for instant filename search.
+ It builds a local index, supports wildcards/filters, tray and hotkeys.
+ Homepage: https://github.com/manxisuo/msearch

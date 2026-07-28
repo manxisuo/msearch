@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(MSearch VERSION 0.3.0 LANGUAGES CXX)
+project(MSearch VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,7 +7,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+option(MSEARCH_BUILD_TESTS "Build unit tests" ON)
+
 find_package(Qt5 5.12 REQUIRED COMPONENTS Core Gui Widgets)
+if(MSEARCH_BUILD_TESTS)
+  find_package(Qt5 5.12 REQUIRED COMPONENTS Test)
+endif()
 
 set(MSEARCH_HAVE_X11 OFF)
 if(UNIX AND NOT APPLE)
@@ -19,20 +24,24 @@ if(UNIX AND NOT APPLE)
   endif()
 endif()
 
-set(MSEARCH_SOURCES
+set(MSEARCH_CORE_SOURCES
+    src/index/FileEntry.cpp
+    src/index/IndexDatabase.cpp
+    src/index/Indexer.cpp
+    src/index/FsWatcher.cpp
+    src/index/MountPolicy.cpp
+    src/search/SearchEngine.cpp
+    src/search/QueryParser.cpp
+    src/search/Pinyin.cpp
+)
+
+set(MSEARCH_APP_SOURCES
     src/main.cpp
     src/app/MainWindow.cpp
     src/app/SettingsDialog.cpp
     src/app/GlobalHotkey.cpp
     src/app/Autostart.cpp
     src/app/HelpDialog.cpp
-    src/index/FileEntry.cpp
-    src/index/IndexDatabase.cpp
-    src/index/Indexer.cpp
-    src/index/FsWatcher.cpp
-    src/search/SearchEngine.cpp
-    src/search/QueryParser.cpp
-    src/search/Pinyin.cpp
     src/model/ResultModel.cpp
 )
 
@@ -47,13 +56,18 @@ set(MSEARCH_HEADERS
     src/index/IndexDatabase.h
     src/index/Indexer.h
     src/index/FsWatcher.h
+    src/index/MountPolicy.h
     src/search/SearchEngine.h
     src/search/QueryParser.h
     src/search/Pinyin.h
     src/model/ResultModel.h
 )
 
-add_executable(msearch ${MSEARCH_SOURCES} ${MSEARCH_HEADERS})
+add_executable(msearch
+    ${MSEARCH_APP_SOURCES}
+    ${MSEARCH_CORE_SOURCES}
+    ${MSEARCH_HEADERS}
+)
 
 target_include_directories(msearch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -76,3 +90,25 @@ if(WIN32)
 endif()
 
 install(TARGETS msearch RUNTIME DESTINATION bin)
+install(FILES packaging/msearch.desktop DESTINATION share/applications)
+install(FILES packaging/msearch.svg DESTINATION share/icons/hicolor/scalable/apps)
+
+if(MSEARCH_BUILD_TESTS)
+  enable_testing()
+  add_executable(msearch_tests
+      tests/test_core.cpp
+      src/index/FileEntry.cpp
+      src/index/IndexDatabase.cpp
+      src/search/SearchEngine.cpp
+      src/search/QueryParser.cpp
+      src/search/Pinyin.cpp
+      src/index/FileEntry.h
+      src/index/IndexDatabase.h
+      src/search/SearchEngine.h
+      src/search/QueryParser.h
+      src/search/Pinyin.h
+  )
+  target_include_directories(msearch_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(msearch_tests Qt5::Core Qt5::Test)
+  add_test(NAME msearch_tests COMMAND msearch_tests)
+endif()

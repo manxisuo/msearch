@@ -1,4 +1,5 @@
 #include "index/Indexer.h"
+#include "index/MountPolicy.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -45,6 +46,16 @@ void Indexer::setSkipHidden(bool on)
 void Indexer::setFollowSymlinks(bool on)
 {
     m_followSymlinks = on;
+}
+
+void Indexer::setSkipNetworkMounts(bool on)
+{
+    m_skipNetwork = on;
+}
+
+void Indexer::setSkipReadOnlyMounts(bool on)
+{
+    m_skipReadOnly = on;
 }
 
 void Indexer::loadFromFile(const QString &filePath)
@@ -106,6 +117,19 @@ bool Indexer::shouldSkipName(const QString &name) const
 
 bool Indexer::shouldSkipPath(const QString &absolutePath) const
 {
+    if (absolutePath.startsWith(QLatin1String("/proc"))
+        || absolutePath.startsWith(QLatin1String("/sys"))
+        || absolutePath.startsWith(QLatin1String("/dev"))
+        || absolutePath.startsWith(QLatin1String("/run"))) {
+        return true;
+    }
+
+    MountPolicy::Options mop;
+    mop.skipNetwork = m_skipNetwork;
+    mop.skipReadOnly = m_skipReadOnly;
+    if (MountPolicy::shouldSkipPath(absolutePath, mop))
+        return true;
+
     for (const QString &pattern : m_excludePatterns) {
         const QString trimmed = pattern.trimmed();
         if (trimmed.isEmpty())
@@ -121,6 +145,8 @@ void Indexer::walkDirectory(const QString &rootPath)
 {
     QFileInfo rootInfo(rootPath);
     if (!rootInfo.exists() || !rootInfo.isDir())
+        return;
+    if (shouldSkipPath(rootInfo.absoluteFilePath()))
         return;
 
     QVector<FileEntry> batch;

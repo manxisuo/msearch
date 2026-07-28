@@ -1,4 +1,5 @@
 #include "index/FsWatcher.h"
+#include "index/MountPolicy.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -43,6 +44,16 @@ void FsWatcher::setSkipHidden(bool on)
 void FsWatcher::setFollowSymlinks(bool on)
 {
     m_followSymlinks = on;
+}
+
+void FsWatcher::setSkipNetworkMounts(bool on)
+{
+    m_skipNetwork = on;
+}
+
+void FsWatcher::setSkipReadOnlyMounts(bool on)
+{
+    m_skipReadOnly = on;
 }
 
 void FsWatcher::setMaxWatches(int n)
@@ -120,6 +131,12 @@ bool FsWatcher::shouldSkipPath(const QString &absolutePath) const
         || absolutePath.startsWith(QLatin1String("/run"))) {
         return true;
     }
+
+    MountPolicy::Options mop;
+    mop.skipNetwork = m_skipNetwork;
+    mop.skipReadOnly = m_skipReadOnly;
+    if (MountPolicy::shouldSkipPath(absolutePath, mop))
+        return true;
 
     for (const QString &pattern : m_excludePatterns) {
         const QString trimmed = pattern.trimmed();

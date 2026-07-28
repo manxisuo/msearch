@@ -55,6 +55,10 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     m_skipHidden->setChecked(options.skipHidden);
     m_followSymlinks = new QCheckBox(tr("跟随符号链接"), this);
     m_followSymlinks->setChecked(options.followSymlinks);
+    m_skipNetwork = new QCheckBox(tr("跳过网络盘（nfs/cifs/sshfs 等）"), this);
+    m_skipNetwork->setChecked(options.skipNetworkMounts);
+    m_skipReadOnly = new QCheckBox(tr("跳过只读挂载"), this);
+    m_skipReadOnly->setChecked(options.skipReadOnlyMounts);
     m_maxResults = new QSpinBox(this);
     m_maxResults->setRange(100, 1000000);
     m_maxResults->setSingleStep(500);
@@ -63,6 +67,8 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     m_pinyin->setChecked(options.pinyinEnabled);
     form->addRow(m_skipHidden);
     form->addRow(m_followSymlinks);
+    form->addRow(m_skipNetwork);
+    form->addRow(m_skipReadOnly);
     form->addRow(m_pinyin);
     form->addRow(tr("搜索结果上限"), m_maxResults);
     root->addWidget(optGroup);
@@ -110,6 +116,8 @@ IndexOptions SettingsDialog::options() const
 
     opt.skipHidden = m_skipHidden->isChecked();
     opt.followSymlinks = m_followSymlinks->isChecked();
+    opt.skipNetworkMounts = m_skipNetwork->isChecked();
+    opt.skipReadOnlyMounts = m_skipReadOnly->isChecked();
     opt.maxResults = m_maxResults->value();
     opt.watchFilesystem = m_watchFs->isChecked();
     opt.minimizeToTray = m_minimizeTray->isChecked();

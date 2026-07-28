@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MSearch
+Name[zh_CN]=MSearch 文件搜索
+GenericName=File Search
+GenericName[zh_CN]=文件名搜索
+Comment=Fast filename search utility
+Comment[zh_CN]=类似 Everything 的文件名快速检索工具
+Exec=msearch
+Icon=msearch
+Terminal=false
+Categories=Utility;Filesystem;Qt;
+Keywords=search;files;everything;索引;搜索;
+StartupNotify=true

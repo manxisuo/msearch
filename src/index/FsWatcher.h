@@ -18,6 +18,8 @@ public:
     void setExcludePatterns(const QStringList &patterns);
     void setSkipHidden(bool on);
     void setFollowSymlinks(bool on);
+    void setSkipNetworkMounts(bool on);
+    void setSkipReadOnlyMounts(bool on);
     void setMaxWatches(int n);
 
     void rebuildWatches();
@@ -45,6 +47,8 @@ private:
     QStringList m_excludeNames;
     bool m_skipHidden = false;
     bool m_followSymlinks = false;
+    bool m_skipNetwork = true;
+    bool m_skipReadOnly = false;
     int m_maxWatches = 8192;
     bool m_watchLimited = false;
 };

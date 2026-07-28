@@ -27,6 +27,8 @@ private:
     QPlainTextEdit *m_excludeEdit = nullptr;
     QCheckBox *m_skipHidden = nullptr;
     QCheckBox *m_followSymlinks = nullptr;
+    QCheckBox *m_skipNetwork = nullptr;
+    QCheckBox *m_skipReadOnly = nullptr;
     QSpinBox *m_maxResults = nullptr;
     QCheckBox *m_watchFs = nullptr;
     QCheckBox *m_minimizeTray = nullptr;

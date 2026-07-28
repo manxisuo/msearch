@@ -323,6 +323,8 @@ void MainWindow::loadSettings()
     m_options.excludePatterns = settings.value(QStringLiteral("excludePatterns")).toStringList();
     m_options.skipHidden = settings.value(QStringLiteral("skipHidden"), false).toBool();
     m_options.followSymlinks = settings.value(QStringLiteral("followSymlinks"), false).toBool();
+    m_options.skipNetworkMounts = settings.value(QStringLiteral("skipNetworkMounts"), true).toBool();
+    m_options.skipReadOnlyMounts = settings.value(QStringLiteral("skipReadOnlyMounts"), false).toBool();
     m_options.maxResults = settings.value(QStringLiteral("maxResults"), 5000).toInt();
     m_options.watchFilesystem = settings.value(QStringLiteral("watchFilesystem"), true).toBool();
     m_options.minimizeToTray = settings.value(QStringLiteral("minimizeToTray"), true).toBool();
@@ -352,6 +354,8 @@ void MainWindow::saveSettings()
     settings.setValue(QStringLiteral("excludePatterns"), m_options.excludePatterns);
     settings.setValue(QStringLiteral("skipHidden"), m_options.skipHidden);
     settings.setValue(QStringLiteral("followSymlinks"), m_options.followSymlinks);
+    settings.setValue(QStringLiteral("skipNetworkMounts"), m_options.skipNetworkMounts);
+    settings.setValue(QStringLiteral("skipReadOnlyMounts"), m_options.skipReadOnlyMounts);
     settings.setValue(QStringLiteral("maxResults"), m_options.maxResults);
     settings.setValue(QStringLiteral("watchFilesystem"), m_options.watchFilesystem);
     settings.setValue(QStringLiteral("minimizeToTray"), m_options.minimizeToTray);
@@ -379,6 +383,8 @@ void MainWindow::applyIndexerOptions()
     m_indexer->setExcludePatterns(m_options.excludePatterns);
     m_indexer->setSkipHidden(m_options.skipHidden);
     m_indexer->setFollowSymlinks(m_options.followSymlinks);
+    m_indexer->setSkipNetworkMounts(m_options.skipNetworkMounts);
+    m_indexer->setSkipReadOnlyMounts(m_options.skipReadOnlyMounts);
 }
 
 void MainWindow::applyWatcherOptions()
@@ -390,6 +396,8 @@ void MainWindow::applyWatcherOptions()
     m_watcher->setExcludePatterns(m_options.excludePatterns);
     m_watcher->setSkipHidden(m_options.skipHidden);
     m_watcher->setFollowSymlinks(m_options.followSymlinks);
+    m_watcher->setSkipNetworkMounts(m_options.skipNetworkMounts);
+    m_watcher->setSkipReadOnlyMounts(m_options.skipReadOnlyMounts);
     m_watcher->rebuildWatches();
 }
 
@@ -461,6 +469,8 @@ void MainWindow::startPartialIndex(const QStringList &pathsToAdd)
     m_indexer->setExcludePatterns(m_options.excludePatterns);
     m_indexer->setSkipHidden(m_options.skipHidden);
     m_indexer->setFollowSymlinks(m_options.followSymlinks);
+    m_indexer->setSkipNetworkMounts(m_options.skipNetworkMounts);
+    m_indexer->setSkipReadOnlyMounts(m_options.skipReadOnlyMounts);
     m_indexer->setClearBeforeIndex(false);
     // Keep full include path list on DB after merge
     m_db->setIncludePaths(m_options.includePaths);
@@ -527,7 +537,9 @@ void MainWindow::onOpenSettings()
     const bool scanOptsChanged =
         previous.excludePatterns != m_options.excludePatterns
         || previous.skipHidden != m_options.skipHidden
-        || previous.followSymlinks != m_options.followSymlinks;
+        || previous.followSymlinks != m_options.followSymlinks
+        || previous.skipNetworkMounts != m_options.skipNetworkMounts
+        || previous.skipReadOnlyMounts != m_options.skipReadOnlyMounts;
 
     QStringList added;
     for (const QString &p : m_options.includePaths) {

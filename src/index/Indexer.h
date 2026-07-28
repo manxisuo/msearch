@@ -17,6 +17,8 @@ public:
     void setExcludePatterns(const QStringList &patterns);
     void setSkipHidden(bool on);
     void setFollowSymlinks(bool on);
+    void setSkipNetworkMounts(bool on);
+    void setSkipReadOnlyMounts(bool on);
     void setClearBeforeIndex(bool on) { m_clearBefore = on; }
     QStringList includePaths() const { return m_includePaths; }
 
@@ -44,6 +46,8 @@ private:
     QStringList m_excludePatterns;
     bool m_skipHidden = false;
     bool m_followSymlinks = false;
+    bool m_skipNetwork = true;
+    bool m_skipReadOnly = false;
     bool m_clearBefore = true;
     std::atomic<bool> m_cancel{false};
     std::atomic<bool> m_running{false};

@@ -8,6 +8,8 @@ struct IndexOptions {
     QStringList excludePatterns;
     bool skipHidden = false;
     bool followSymlinks = false;
+    bool skipNetworkMounts = true;
+    bool skipReadOnlyMounts = false;
     int maxResults = 5000;
 
     bool watchFilesystem = true;
