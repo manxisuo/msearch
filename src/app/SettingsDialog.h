@@ -32,5 +32,7 @@ private:
     QCheckBox *m_minimizeTray = nullptr;
     QCheckBox *m_startInTray = nullptr;
     QCheckBox *m_autostart = nullptr;
+    QCheckBox *m_pinyin = nullptr;
     QLineEdit *m_hotkeyEdit = nullptr;
+    IndexOptions m_original;
 };

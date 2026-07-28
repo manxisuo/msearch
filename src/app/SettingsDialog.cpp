@@ -16,6 +16,7 @@
 
 SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     : QDialog(parent)
+    , m_original(options)
 {
     setWindowTitle(tr("设置"));
     resize(580, 620);
@@ -58,8 +59,11 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     m_maxResults->setRange(100, 1000000);
     m_maxResults->setSingleStep(500);
     m_maxResults->setValue(options.maxResults);
+    m_pinyin = new QCheckBox(tr("启用拼音首字母匹配"), this);
+    m_pinyin->setChecked(options.pinyinEnabled);
     form->addRow(m_skipHidden);
     form->addRow(m_followSymlinks);
+    form->addRow(m_pinyin);
     form->addRow(tr("搜索结果上限"), m_maxResults);
     root->addWidget(optGroup);
 
@@ -112,6 +116,8 @@ IndexOptions SettingsDialog::options() const
     opt.startInTray = m_startInTray->isChecked();
     opt.autostart = m_autostart->isChecked();
     opt.hotkey = m_hotkeyEdit->text().trimmed();
+    opt.pinyinEnabled = m_pinyin->isChecked();
+    opt.bookmarks = m_original.bookmarks;
     return opt;
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(MSearch VERSION 0.2.0 LANGUAGES CXX)
+project(MSearch VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,11 +25,14 @@ set(MSEARCH_SOURCES
     src/app/SettingsDialog.cpp
     src/app/GlobalHotkey.cpp
     src/app/Autostart.cpp
+    src/app/HelpDialog.cpp
     src/index/FileEntry.cpp
     src/index/IndexDatabase.cpp
     src/index/Indexer.cpp
     src/index/FsWatcher.cpp
     src/search/SearchEngine.cpp
+    src/search/QueryParser.cpp
+    src/search/Pinyin.cpp
     src/model/ResultModel.cpp
 )
 
@@ -39,11 +42,14 @@ set(MSEARCH_HEADERS
     src/app/IndexOptions.h
     src/app/GlobalHotkey.h
     src/app/Autostart.h
+    src/app/HelpDialog.h
     src/index/FileEntry.h
     src/index/IndexDatabase.h
     src/index/Indexer.h
     src/index/FsWatcher.h
     src/search/SearchEngine.h
+    src/search/QueryParser.h
+    src/search/Pinyin.h
     src/model/ResultModel.h
 )
 

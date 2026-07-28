@@ -15,4 +15,6 @@ struct IndexOptions {
     bool startInTray = false;
     bool autostart = false;
     QString hotkey = QStringLiteral("Ctrl+Alt+Space");
+    bool pinyinEnabled = true;
+    QStringList bookmarks; // saved queries
 };

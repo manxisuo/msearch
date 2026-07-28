@@ -1,6 +1,7 @@
 #include "app/MainWindow.h"
 #include "app/Autostart.h"
 #include "app/GlobalHotkey.h"
+#include "app/HelpDialog.h"
 #include "app/SettingsDialog.h"
 #include "index/FsWatcher.h"
 #include "index/IndexDatabase.h"
@@ -73,6 +74,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     connect(m_search, &SearchEngine::resultsReady, this, &MainWindow::onResultsReady);
+    connect(m_search, &SearchEngine::searchError, this, &MainWindow::onSearchError);
     connect(m_watcher, &FsWatcher::indexUpdated, this, &MainWindow::onWatchUpdated);
     connect(m_watcher, &FsWatcher::statusMessage, this, [this](const QString &msg) {
         m_statusLabel->setText(msg);
@@ -140,7 +142,8 @@ void MainWindow::setupUi()
 
     auto *top = new QHBoxLayout;
     m_searchEdit = new QLineEdit(this);
-    m_searchEdit->setPlaceholderText(tr("文件名关键字；支持通配符 * ?（如 *.pdf、report*）"));
+    m_searchEdit->setPlaceholderText(
+        tr("关键字 / 通配符 / ext: / path: / regex: / size: / dm:  — F1 查看语法"));
     m_searchEdit->setClearButtonEnabled(true);
 
     m_historyModel = new QStringListModel(this);
@@ -154,18 +157,44 @@ void MainWindow::setupUi()
     m_filterCombo->addItem(tr("仅文件"), int(EntryFilter::FilesOnly));
     m_filterCombo->addItem(tr("仅文件夹"), int(EntryFilter::DirsOnly));
 
+    m_presetCombo = new QComboBox(this);
+    m_presetCombo->setMinimumWidth(120);
+    m_presetCombo->addItem(tr("过滤器…"), QString());
+    m_presetCombo->addItem(tr("PDF"), QStringLiteral("ext:pdf"));
+    m_presetCombo->addItem(tr("图片"), QStringLiteral("ext:png;jpg;jpeg;gif;webp;bmp"));
+    m_presetCombo->addItem(tr("视频"), QStringLiteral("ext:mp4;mkv;avi;mov;webm"));
+    m_presetCombo->addItem(tr("音频"), QStringLiteral("ext:mp3;flac;wav;aac;ogg"));
+    m_presetCombo->addItem(tr("文档"), QStringLiteral("ext:doc;docx;xls;xlsx;ppt;pptx;txt;md"));
+    m_presetCombo->addItem(tr(">10MB"), QStringLiteral("size:>10mb"));
+    m_presetCombo->addItem(tr("今天改过"), QStringLiteral("dm:today"));
+    m_presetCombo->addItem(tr("近一周"), QStringLiteral("dm:week"));
+
+    m_bookmarkCombo = new QComboBox(this);
+    m_bookmarkCombo->setMinimumWidth(140);
+    m_bookmarkCombo->setEditable(false);
+
     m_caseCheck = new QCheckBox(tr("区分大小写"), this);
     m_rebuildBtn = new QPushButton(tr("重建索引"), this);
     m_cancelBtn = new QPushButton(tr("取消"), this);
     m_cancelBtn->setEnabled(false);
     m_settingsBtn = new QPushButton(tr("设置"), this);
+    m_helpBtn = new QPushButton(tr("?"), this);
+    m_helpBtn->setFixedWidth(28);
+    m_helpBtn->setToolTip(tr("搜索语法帮助 (F1)"));
+    m_bookmarkBtn = new QPushButton(tr("★"), this);
+    m_bookmarkBtn->setFixedWidth(28);
+    m_bookmarkBtn->setToolTip(tr("将当前查询存为书签"));
 
     top->addWidget(m_searchEdit, 1);
+    top->addWidget(m_presetCombo);
+    top->addWidget(m_bookmarkCombo);
+    top->addWidget(m_bookmarkBtn);
     top->addWidget(m_filterCombo);
     top->addWidget(m_caseCheck);
     top->addWidget(m_rebuildBtn);
     top->addWidget(m_cancelBtn);
     top->addWidget(m_settingsBtn);
+    top->addWidget(m_helpBtn);
     root->addLayout(top);
 
     m_model = new ResultModel(this);
@@ -203,8 +232,14 @@ void MainWindow::setupUi()
     connect(m_rebuildBtn, &QPushButton::clicked, this, &MainWindow::onRebuildIndex);
     connect(m_cancelBtn, &QPushButton::clicked, this, &MainWindow::onCancelIndex);
     connect(m_settingsBtn, &QPushButton::clicked, this, &MainWindow::onOpenSettings);
+    connect(m_helpBtn, &QPushButton::clicked, this, &MainWindow::onShowHelp);
+    connect(m_bookmarkBtn, &QPushButton::clicked, this, &MainWindow::onSaveBookmark);
     connect(m_filterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onFilterChanged);
+    connect(m_presetCombo, QOverload<int>::of(&QComboBox::activated),
+            this, &MainWindow::onPresetChosen);
+    connect(m_bookmarkCombo, QOverload<int>::of(&QComboBox::activated),
+            this, &MainWindow::onBookmarkChosen);
     connect(m_caseCheck, &QCheckBox::toggled, this, &MainWindow::onCaseToggled);
     connect(m_table, &QTableView::doubleClicked, this, &MainWindow::onDoubleClicked);
     connect(m_table, &QTableView::customContextMenuRequested, this, &MainWindow::onContextMenu);
@@ -234,6 +269,11 @@ void MainWindow::setupShortcuts()
     rebuildAct->setShortcut(QKeySequence(Qt::Key_F5));
     connect(rebuildAct, &QAction::triggered, this, &MainWindow::onRebuildIndex);
     addAction(rebuildAct);
+
+    auto *helpAct = new QAction(this);
+    helpAct->setShortcut(QKeySequence(Qt::Key_F1));
+    connect(helpAct, &QAction::triggered, this, &MainWindow::onShowHelp);
+    addAction(helpAct);
 }
 
 void MainWindow::setupTray()
@@ -290,6 +330,9 @@ void MainWindow::loadSettings()
     m_options.autostart = settings.value(QStringLiteral("autostart"), false).toBool();
     m_options.hotkey = settings.value(QStringLiteral("hotkey"),
                                       QStringLiteral("Ctrl+Alt+Space")).toString();
+    m_options.pinyinEnabled = settings.value(QStringLiteral("pinyinEnabled"), true).toBool();
+    m_options.bookmarks = settings.value(QStringLiteral("bookmarks")).toStringList();
+    refreshBookmarkCombo();
 
     m_caseCheck->setChecked(settings.value(QStringLiteral("caseSensitive"), false).toBool());
     const int filter = settings.value(QStringLiteral("filter"), 0).toInt();
@@ -315,6 +358,8 @@ void MainWindow::saveSettings()
     settings.setValue(QStringLiteral("startInTray"), m_options.startInTray);
     settings.setValue(QStringLiteral("autostart"), m_options.autostart);
     settings.setValue(QStringLiteral("hotkey"), m_options.hotkey);
+    settings.setValue(QStringLiteral("pinyinEnabled"), m_options.pinyinEnabled);
+    settings.setValue(QStringLiteral("bookmarks"), m_options.bookmarks);
     settings.setValue(QStringLiteral("caseSensitive"), m_caseCheck->isChecked());
     settings.setValue(QStringLiteral("filter"), m_filterCombo->currentIndex());
     settings.setValue(QStringLiteral("searchHistory"), m_searchHistory);
@@ -547,7 +592,8 @@ void MainWindow::runSearch(const QString &query)
                               Q_ARG(QString, query),
                               Q_ARG(bool, m_caseCheck->isChecked()),
                               Q_ARG(int, m_filterCombo->currentData().toInt()),
-                              Q_ARG(int, m_options.maxResults));
+                              Q_ARG(int, m_options.maxResults),
+                              Q_ARG(bool, m_options.pinyinEnabled));
 }
 
 void MainWindow::rememberQuery(const QString &query)
@@ -568,7 +614,7 @@ void MainWindow::onResultsReady(const QVector<FileEntry> &results, const QString
 
     m_model->setResults(results);
     if (query.isEmpty()) {
-        m_statusLabel->setText(tr("索引：%1 条 — 输入关键字开始搜索（支持 * ?）")
+        m_statusLabel->setText(tr("索引：%1 条 — 输入关键字开始搜索（F1 查看语法）")
                                    .arg(m_db->count()));
     } else if (truncated) {
         m_statusLabel->setText(tr("显示前 %1 条（已达上限，可在设置中调整）— 索引共 %2 条")
@@ -579,6 +625,71 @@ void MainWindow::onResultsReady(const QVector<FileEntry> &results, const QString
                                    .arg(results.size())
                                    .arg(m_db->count()));
     }
+}
+
+void MainWindow::onSearchError(const QString &query, const QString &error)
+{
+    if (query != m_searchEdit->text().trimmed())
+        return;
+    m_model->clear();
+    m_statusLabel->setText(tr("查询无效：%1").arg(error));
+}
+
+void MainWindow::onPresetChosen(int index)
+{
+    if (index <= 0)
+        return;
+    const QString frag = m_presetCombo->itemData(index).toString();
+    if (frag.isEmpty())
+        return;
+
+    QString cur = m_searchEdit->text().trimmed();
+    if (!cur.isEmpty())
+        cur += QLatin1Char(' ');
+    cur += frag;
+    m_searchEdit->setText(cur);
+    m_presetCombo->setCurrentIndex(0);
+    m_searchEdit->setFocus();
+}
+
+void MainWindow::refreshBookmarkCombo()
+{
+    m_bookmarkCombo->blockSignals(true);
+    m_bookmarkCombo->clear();
+    m_bookmarkCombo->addItem(tr("书签…"));
+    for (const QString &b : m_options.bookmarks)
+        m_bookmarkCombo->addItem(b);
+    m_bookmarkCombo->blockSignals(false);
+}
+
+void MainWindow::onBookmarkChosen(int index)
+{
+    if (index <= 0)
+        return;
+    m_searchEdit->setText(m_bookmarkCombo->itemText(index));
+    m_bookmarkCombo->setCurrentIndex(0);
+    m_searchEdit->setFocus();
+}
+
+void MainWindow::onSaveBookmark()
+{
+    const QString q = m_searchEdit->text().trimmed();
+    if (q.isEmpty())
+        return;
+    if (!m_options.bookmarks.contains(q)) {
+        m_options.bookmarks.prepend(q);
+        while (m_options.bookmarks.size() > 30)
+            m_options.bookmarks.removeLast();
+        refreshBookmarkCombo();
+        saveSettings();
+    }
+    m_statusLabel->setText(tr("已保存书签：%1").arg(q));
+}
+
+void MainWindow::onShowHelp()
+{
+    HelpDialog dlg(this);
+    dlg.exec();
 }
 
 void MainWindow::onWatchUpdated()

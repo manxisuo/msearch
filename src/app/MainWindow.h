@@ -17,7 +17,6 @@ class QTimer;
 class QThread;
 class QCompleter;
 class QStringListModel;
-class QSystemTrayIcon;
 class QMenu;
 
 class IndexDatabase;
@@ -43,6 +42,7 @@ private slots:
     void onQueryChanged(const QString &text);
     void onSearchTimeout();
     void onResultsReady(const QVector<FileEntry> &results, const QString &query, bool truncated);
+    void onSearchError(const QString &query, const QString &error);
     void onRebuildIndex();
     void onCancelIndex();
     void onIndexProgress(qint64 filesFound, const QString &currentPath, double filesPerSec);
@@ -51,6 +51,10 @@ private slots:
     void onOpenSettings();
     void onFilterChanged(int index);
     void onCaseToggled(bool checked);
+    void onPresetChosen(int index);
+    void onBookmarkChosen(int index);
+    void onSaveBookmark();
+    void onShowHelp();
     void onDoubleClicked(const QModelIndex &index);
     void onContextMenu(const QPoint &pos);
     void onWatchUpdated();
@@ -79,6 +83,7 @@ private:
     void runSearch(const QString &query);
     void rememberQuery(const QString &query);
     void applyAutostart();
+    void refreshBookmarkCombo();
     QIcon appIcon() const;
     QString indexFilePath() const;
     FileEntry currentEntry() const;
@@ -87,10 +92,14 @@ private:
     QTableView *m_table = nullptr;
     QLabel *m_statusLabel = nullptr;
     QComboBox *m_filterCombo = nullptr;
+    QComboBox *m_presetCombo = nullptr;
+    QComboBox *m_bookmarkCombo = nullptr;
     QCheckBox *m_caseCheck = nullptr;
     QPushButton *m_rebuildBtn = nullptr;
     QPushButton *m_cancelBtn = nullptr;
     QPushButton *m_settingsBtn = nullptr;
+    QPushButton *m_helpBtn = nullptr;
+    QPushButton *m_bookmarkBtn = nullptr;
     QTimer *m_debounce = nullptr;
     QTimer *m_saveTimer = nullptr;
     QCompleter *m_completer = nullptr;
