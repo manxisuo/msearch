@@ -1,0 +1,15 @@
+/build/
+/cmake-build-*/
+/.idea/
+/.vscode/
+/*.user
+/*.autosave
+CMakeCache.txt
+CMakeFiles/
+Makefile
+compile_commands.json
+*.o
+*.a
+*.so
+msearch
+*.msdb
