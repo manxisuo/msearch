@@ -6,15 +6,19 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD="${BUILD_DIR:-$ROOT/build}"
 ARCH="${ARCH:-$(dpkg --print-architecture 2>/dev/null || echo amd64)}"
 VERSION="${VERSION:-0.4.0}"
-STAGE="$ROOT/packaging/deb/stage"
 
-if [[ ! -x "$BUILD/msearch" ]]; then
+# Stage on a Linux-native filesystem. Staging under /mnt/* (NTFS/DrvFs) often
+# yields mode 777 and makes dpkg-deb reject DEBIAN/.
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/msearch-deb.XXXXXX")"
+cleanup() { rm -rf "$STAGE"; }
+trap cleanup EXIT
+
+if [[ ! -f "$BUILD/msearch" ]]; then
   echo "error: $BUILD/msearch not found. Build first, e.g.:"
   echo "  cmake -S \"$ROOT\" -B \"$BUILD\" -DCMAKE_BUILD_TYPE=Release && cmake --build \"$BUILD\" -j"
   exit 1
 fi
 
-rm -rf "$STAGE"
 mkdir -p "$STAGE/DEBIAN" \
          "$STAGE/usr/bin" \
          "$STAGE/usr/share/applications" \
@@ -34,6 +38,16 @@ sed -e "s/^Architecture:.*/Architecture: ${ARCH}/" \
 SIZE_KB="$(du -sk "$STAGE" | awk '{print $1}')"
 echo "Installed-Size: ${SIZE_KB}" >> "$STAGE/DEBIAN/control"
 
-OUT="$ROOT/packaging/deb/msearch_${VERSION}_${ARCH}.deb"
+# dpkg-deb requires DEBIAN/ permissions in [0755, 0775]
+chmod 0755 "$STAGE" "$STAGE/DEBIAN"
+chmod 0644 "$STAGE/DEBIAN/control"
+find "$STAGE/usr" -type d -exec chmod 0755 {} +
+find "$STAGE/usr" -type f -exec chmod 0644 {} +
+chmod 0755 "$STAGE/usr/bin/msearch"
+
+OUT_DIR="$ROOT/packaging/deb"
+mkdir -p "$OUT_DIR"
+OUT="$OUT_DIR/msearch_${VERSION}_${ARCH}.deb"
+rm -f "$OUT"
 dpkg-deb --build "$STAGE" "$OUT"
 echo "Created: $OUT"
