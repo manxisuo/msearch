@@ -3,12 +3,12 @@
 #include "app/IndexOptions.h"
 
 #include <QDialog>
-#include <QStringList>
 
 class QListWidget;
 class QPlainTextEdit;
 class QCheckBox;
 class QSpinBox;
+class QLineEdit;
 
 class SettingsDialog : public QDialog
 {
@@ -28,4 +28,9 @@ private:
     QCheckBox *m_skipHidden = nullptr;
     QCheckBox *m_followSymlinks = nullptr;
     QSpinBox *m_maxResults = nullptr;
+    QCheckBox *m_watchFs = nullptr;
+    QCheckBox *m_minimizeTray = nullptr;
+    QCheckBox *m_startInTray = nullptr;
+    QCheckBox *m_autostart = nullptr;
+    QLineEdit *m_hotkeyEdit = nullptr;
 };

@@ -47,6 +47,15 @@ void Indexer::setFollowSymlinks(bool on)
     m_followSymlinks = on;
 }
 
+void Indexer::loadFromFile(const QString &filePath)
+{
+    if (!m_db->loadFromFile(filePath)) {
+        emit loadFinished(false, 0, tr("索引文件损坏或无法读取"));
+        return;
+    }
+    emit loadFinished(true, m_db->count(), QString());
+}
+
 void Indexer::start()
 {
     if (m_running.exchange(true))
@@ -62,12 +71,17 @@ void Indexer::start()
         return;
     }
 
-    m_db->clear();
-    m_db->setIncludePaths(m_includePaths);
+    if (m_clearBefore) {
+        m_db->clear();
+        m_db->setIncludePaths(m_includePaths);
+    }
 
     for (const QString &root : m_includePaths) {
         if (m_cancel)
             break;
+        // When merging (partial), drop old subtree of this root first
+        if (!m_clearBefore)
+            m_db->removeUnderPrefix(root);
         walkDirectory(root);
     }
 

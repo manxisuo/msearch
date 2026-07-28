@@ -4,6 +4,7 @@
 
 #include <QMainWindow>
 #include <QStringList>
+#include <QSystemTrayIcon>
 #include <QVector>
 
 class QLineEdit;
@@ -16,11 +17,15 @@ class QTimer;
 class QThread;
 class QCompleter;
 class QStringListModel;
+class QSystemTrayIcon;
+class QMenu;
 
 class IndexDatabase;
 class Indexer;
 class SearchEngine;
 class ResultModel;
+class FsWatcher;
+class GlobalHotkey;
 struct FileEntry;
 
 class MainWindow : public QMainWindow
@@ -32,6 +37,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onQueryChanged(const QString &text);
@@ -41,27 +47,39 @@ private slots:
     void onCancelIndex();
     void onIndexProgress(qint64 filesFound, const QString &currentPath, double filesPerSec);
     void onIndexFinished(bool cancelled, qint64 totalFiles);
+    void onLoadFinished(bool ok, int count, const QString &error);
     void onOpenSettings();
     void onFilterChanged(int index);
     void onCaseToggled(bool checked);
     void onDoubleClicked(const QModelIndex &index);
     void onContextMenu(const QPoint &pos);
+    void onWatchUpdated();
+    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
+    void showFromTray();
+    void quitApp();
     void openSelected();
     void openSelectedFolder();
     void copySelectedPath();
     void focusSearch();
     void clearSearch();
+    void persistIndexIfDirty();
 
 private:
     void setupUi();
     void setupShortcuts();
+    void setupTray();
+    void setupHotkey();
     void loadSettings();
     void saveSettings();
     void loadOrBuildIndex();
-    void startIndexing();
+    void startIndexing(bool clearAll = true);
+    void startPartialIndex(const QStringList &pathsToAdd);
     void applyIndexerOptions();
+    void applyWatcherOptions();
     void runSearch(const QString &query);
     void rememberQuery(const QString &query);
+    void applyAutostart();
+    QIcon appIcon() const;
     QString indexFilePath() const;
     FileEntry currentEntry() const;
 
@@ -74,16 +92,22 @@ private:
     QPushButton *m_cancelBtn = nullptr;
     QPushButton *m_settingsBtn = nullptr;
     QTimer *m_debounce = nullptr;
+    QTimer *m_saveTimer = nullptr;
     QCompleter *m_completer = nullptr;
     QStringListModel *m_historyModel = nullptr;
+    QSystemTrayIcon *m_tray = nullptr;
+    QMenu *m_trayMenu = nullptr;
 
     ResultModel *m_model = nullptr;
     IndexDatabase *m_db = nullptr;
     Indexer *m_indexer = nullptr;
     SearchEngine *m_search = nullptr;
+    FsWatcher *m_watcher = nullptr;
+    GlobalHotkey *m_hotkey = nullptr;
     QThread *m_indexThread = nullptr;
     QThread *m_searchThread = nullptr;
 
     IndexOptions m_options;
     QStringList m_searchHistory;
+    bool m_forceQuit = false;
 };

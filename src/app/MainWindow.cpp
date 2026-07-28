@@ -1,5 +1,8 @@
 #include "app/MainWindow.h"
+#include "app/Autostart.h"
+#include "app/GlobalHotkey.h"
 #include "app/SettingsDialog.h"
+#include "index/FsWatcher.h"
 #include "index/IndexDatabase.h"
 #include "index/Indexer.h"
 #include "model/ResultModel.h"
@@ -12,16 +15,21 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QCompleter>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSettings>
 #include <QStandardPaths>
@@ -39,12 +47,17 @@ MainWindow::MainWindow(QWidget *parent)
     , m_db(new IndexDatabase)
     , m_indexer(new Indexer(m_db))
     , m_search(new SearchEngine(m_db))
+    , m_watcher(new FsWatcher(m_db, this))
+    , m_hotkey(new GlobalHotkey(this))
     , m_indexThread(new QThread(this))
     , m_searchThread(new QThread(this))
 {
     setupUi();
     setupShortcuts();
+    setupTray();
     loadSettings();
+    setupHotkey();
+    applyAutostart();
 
     m_indexer->moveToThread(m_indexThread);
     m_search->moveToThread(m_searchThread);
@@ -54,22 +67,39 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_indexer, &Indexer::progress, this, &MainWindow::onIndexProgress);
     connect(m_indexer, &Indexer::finished, this, &MainWindow::onIndexFinished);
+    connect(m_indexer, &Indexer::loadFinished, this, &MainWindow::onLoadFinished);
     connect(m_indexer, &Indexer::error, this, [this](const QString &msg) {
         m_statusLabel->setText(msg);
     });
 
     connect(m_search, &SearchEngine::resultsReady, this, &MainWindow::onResultsReady);
+    connect(m_watcher, &FsWatcher::indexUpdated, this, &MainWindow::onWatchUpdated);
+    connect(m_watcher, &FsWatcher::statusMessage, this, [this](const QString &msg) {
+        m_statusLabel->setText(msg);
+    });
+    connect(m_hotkey, &GlobalHotkey::activated, this, &MainWindow::showFromTray);
+
+    m_saveTimer = new QTimer(this);
+    m_saveTimer->setSingleShot(true);
+    m_saveTimer->setInterval(2000);
+    connect(m_saveTimer, &QTimer::timeout, this, &MainWindow::persistIndexIfDirty);
 
     m_indexThread->start();
     m_searchThread->start();
 
     loadOrBuildIndex();
+
+    if (m_options.startInTray && m_tray)
+        hide();
 }
 
 MainWindow::~MainWindow()
 {
+    m_watcher->stop();
     if (m_indexer)
         QMetaObject::invokeMethod(m_indexer, "cancel", Qt::QueuedConnection);
+
+    persistIndexIfDirty();
 
     m_indexThread->quit();
     m_searchThread->quit();
@@ -79,9 +109,26 @@ MainWindow::~MainWindow()
     delete m_db;
 }
 
+QIcon MainWindow::appIcon() const
+{
+    QPixmap pm(64, 64);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(QColor(32, 110, 180));
+    p.setPen(Qt::NoPen);
+    p.drawRoundedRect(4, 4, 56, 56, 12, 12);
+    p.setPen(QPen(Qt::white, 3));
+    p.drawEllipse(16, 16, 24, 24);
+    p.drawLine(36, 36, 48, 48);
+    p.end();
+    return QIcon(pm);
+}
+
 void MainWindow::setupUi()
 {
     setWindowTitle(QStringLiteral("MSearch"));
+    setWindowIcon(appIcon());
     resize(960, 640);
 
     auto *central = new QWidget(this);
@@ -141,7 +188,7 @@ void MainWindow::setupUi()
     m_table->setColumnWidth(ResultModel::Modified, 140);
     root->addWidget(m_table, 1);
 
-    m_statusLabel = new QLabel(tr("就绪 — Ctrl+L 聚焦搜索，Esc 清空，F5 重建索引"), this);
+    m_statusLabel = new QLabel(tr("就绪"), this);
     statusBar()->addWidget(m_statusLabel, 1);
 
     m_debounce = new QTimer(this);
@@ -189,6 +236,40 @@ void MainWindow::setupShortcuts()
     addAction(rebuildAct);
 }
 
+void MainWindow::setupTray()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+
+    m_trayMenu = new QMenu(this);
+    m_trayMenu->addAction(tr("显示主窗口"), this, &MainWindow::showFromTray);
+    m_trayMenu->addAction(tr("重建索引"), this, &MainWindow::onRebuildIndex);
+    m_trayMenu->addSeparator();
+    m_trayMenu->addAction(tr("退出"), this, &MainWindow::quitApp);
+
+    m_tray = new QSystemTrayIcon(appIcon(), this);
+    m_tray->setToolTip(QStringLiteral("MSearch"));
+    m_tray->setContextMenu(m_trayMenu);
+    connect(m_tray, &QSystemTrayIcon::activated, this, &MainWindow::onTrayActivated);
+    m_tray->show();
+}
+
+void MainWindow::setupHotkey()
+{
+    if (m_options.hotkey.isEmpty()) {
+        m_hotkey->clear();
+        return;
+    }
+    if (!m_hotkey->setShortcut(m_options.hotkey)) {
+        m_statusLabel->setText(tr("全局热键注册失败：%1（可能被占用）").arg(m_options.hotkey));
+    }
+}
+
+void MainWindow::applyAutostart()
+{
+    Autostart::setEnabled(m_options.autostart, QCoreApplication::applicationFilePath());
+}
+
 void MainWindow::loadSettings()
 {
     QSettings settings(QStringLiteral("MSearch"), QStringLiteral("MSearch"));
@@ -203,6 +284,12 @@ void MainWindow::loadSettings()
     m_options.skipHidden = settings.value(QStringLiteral("skipHidden"), false).toBool();
     m_options.followSymlinks = settings.value(QStringLiteral("followSymlinks"), false).toBool();
     m_options.maxResults = settings.value(QStringLiteral("maxResults"), 5000).toInt();
+    m_options.watchFilesystem = settings.value(QStringLiteral("watchFilesystem"), true).toBool();
+    m_options.minimizeToTray = settings.value(QStringLiteral("minimizeToTray"), true).toBool();
+    m_options.startInTray = settings.value(QStringLiteral("startInTray"), false).toBool();
+    m_options.autostart = settings.value(QStringLiteral("autostart"), false).toBool();
+    m_options.hotkey = settings.value(QStringLiteral("hotkey"),
+                                      QStringLiteral("Ctrl+Alt+Space")).toString();
 
     m_caseCheck->setChecked(settings.value(QStringLiteral("caseSensitive"), false).toBool());
     const int filter = settings.value(QStringLiteral("filter"), 0).toInt();
@@ -223,6 +310,11 @@ void MainWindow::saveSettings()
     settings.setValue(QStringLiteral("skipHidden"), m_options.skipHidden);
     settings.setValue(QStringLiteral("followSymlinks"), m_options.followSymlinks);
     settings.setValue(QStringLiteral("maxResults"), m_options.maxResults);
+    settings.setValue(QStringLiteral("watchFilesystem"), m_options.watchFilesystem);
+    settings.setValue(QStringLiteral("minimizeToTray"), m_options.minimizeToTray);
+    settings.setValue(QStringLiteral("startInTray"), m_options.startInTray);
+    settings.setValue(QStringLiteral("autostart"), m_options.autostart);
+    settings.setValue(QStringLiteral("hotkey"), m_options.hotkey);
     settings.setValue(QStringLiteral("caseSensitive"), m_caseCheck->isChecked());
     settings.setValue(QStringLiteral("filter"), m_filterCombo->currentIndex());
     settings.setValue(QStringLiteral("searchHistory"), m_searchHistory);
@@ -244,40 +336,95 @@ void MainWindow::applyIndexerOptions()
     m_indexer->setFollowSymlinks(m_options.followSymlinks);
 }
 
+void MainWindow::applyWatcherOptions()
+{
+    m_watcher->stop();
+    if (!m_options.watchFilesystem)
+        return;
+
+    m_watcher->setExcludePatterns(m_options.excludePatterns);
+    m_watcher->setSkipHidden(m_options.skipHidden);
+    m_watcher->setFollowSymlinks(m_options.followSymlinks);
+    m_watcher->rebuildWatches();
+}
+
 void MainWindow::loadOrBuildIndex()
 {
     const QString path = indexFilePath();
-    if (QFileInfo::exists(path) && m_db->loadFromFile(path)) {
-        const QStringList saved = m_db->includePaths();
-        if (!saved.isEmpty())
-            m_options.includePaths = saved;
-        m_statusLabel->setText(tr("已加载索引：%1 条 — 输入关键字开始搜索").arg(m_db->count()));
-        if (!m_searchEdit->text().isEmpty())
-            runSearch(m_searchEdit->text());
+    if (!QFileInfo::exists(path)) {
+        startIndexing(true);
         return;
     }
 
-    startIndexing();
+    m_statusLabel->setText(tr("正在异步加载索引…"));
+    QMetaObject::invokeMethod(m_indexer, "loadFromFile", Qt::QueuedConnection,
+                              Q_ARG(QString, path));
 }
 
-void MainWindow::startIndexing()
+void MainWindow::onLoadFinished(bool ok, int count, const QString &error)
+{
+    if (!ok) {
+        m_statusLabel->setText(tr("索引损坏，将重新建立：%1").arg(error));
+        if (m_tray)
+            m_tray->showMessage(tr("MSearch"), tr("索引文件损坏，正在重建…"),
+                                QSystemTrayIcon::Warning, 3000);
+        startIndexing(true);
+        return;
+    }
+
+    const QStringList saved = m_db->includePaths();
+    if (!saved.isEmpty())
+        m_options.includePaths = saved;
+
+    m_statusLabel->setText(tr("已加载索引：%1 条 — 输入关键字开始搜索").arg(count));
+    applyWatcherOptions();
+
+    if (!m_searchEdit->text().isEmpty())
+        runSearch(m_searchEdit->text());
+}
+
+void MainWindow::startIndexing(bool clearAll)
 {
     if (m_options.includePaths.isEmpty()) {
         QMessageBox::warning(this, tr("MSearch"), tr("请先在设置中添加要索引的目录。"));
         return;
     }
 
+    m_watcher->stop();
     m_rebuildBtn->setEnabled(false);
     m_cancelBtn->setEnabled(true);
     m_statusLabel->setText(tr("正在建立索引…"));
 
     applyIndexerOptions();
+    m_indexer->setClearBeforeIndex(clearAll);
+    QMetaObject::invokeMethod(m_indexer, "start", Qt::QueuedConnection);
+}
+
+void MainWindow::startPartialIndex(const QStringList &pathsToAdd)
+{
+    if (pathsToAdd.isEmpty()) {
+        applyWatcherOptions();
+        return;
+    }
+
+    m_watcher->stop();
+    m_rebuildBtn->setEnabled(false);
+    m_cancelBtn->setEnabled(true);
+    m_statusLabel->setText(tr("正在增量索引新目录…"));
+
+    m_indexer->setIncludePaths(pathsToAdd);
+    m_indexer->setExcludePatterns(m_options.excludePatterns);
+    m_indexer->setSkipHidden(m_options.skipHidden);
+    m_indexer->setFollowSymlinks(m_options.followSymlinks);
+    m_indexer->setClearBeforeIndex(false);
+    // Keep full include path list on DB after merge
+    m_db->setIncludePaths(m_options.includePaths);
     QMetaObject::invokeMethod(m_indexer, "start", Qt::QueuedConnection);
 }
 
 void MainWindow::onRebuildIndex()
 {
-    startIndexing();
+    startIndexing(true);
 }
 
 void MainWindow::onCancelIndex()
@@ -297,14 +444,21 @@ void MainWindow::onIndexFinished(bool cancelled, qint64 totalFiles)
 {
     m_rebuildBtn->setEnabled(true);
     m_cancelBtn->setEnabled(false);
+    m_db->setIncludePaths(m_options.includePaths);
 
     if (!cancelled) {
         m_db->saveToFile(indexFilePath());
-        m_statusLabel->setText(tr("索引完成：%1 条").arg(totalFiles));
+        m_db->markClean();
+        m_statusLabel->setText(tr("索引完成：共 %1 条（本次扫描 %2）")
+                                   .arg(m_db->count())
+                                   .arg(totalFiles));
     } else {
         m_statusLabel->setText(tr("索引已取消（当前 %1 条）").arg(m_db->count()));
         m_db->saveToFile(indexFilePath());
+        m_db->markClean();
     }
+
+    applyWatcherOptions();
 
     if (!m_searchEdit->text().trimmed().isEmpty())
         runSearch(m_searchEdit->text());
@@ -312,35 +466,69 @@ void MainWindow::onIndexFinished(bool cancelled, qint64 totalFiles)
 
 void MainWindow::onOpenSettings()
 {
+    const IndexOptions previous = m_options;
     SettingsDialog dlg(m_options, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
-    const IndexOptions next = dlg.options();
-    const bool needRebuild =
-        next.includePaths != m_options.includePaths
-        || next.excludePatterns != m_options.excludePatterns
-        || next.skipHidden != m_options.skipHidden
-        || next.followSymlinks != m_options.followSymlinks;
-
-    m_options = next;
+    m_options = dlg.options();
     saveSettings();
+    setupHotkey();
+    applyAutostart();
 
     if (!m_searchEdit->text().trimmed().isEmpty())
         runSearch(m_searchEdit->text());
 
-    if (!needRebuild)
+    const bool scanOptsChanged =
+        previous.excludePatterns != m_options.excludePatterns
+        || previous.skipHidden != m_options.skipHidden
+        || previous.followSymlinks != m_options.followSymlinks;
+
+    QStringList added;
+    for (const QString &p : m_options.includePaths) {
+        if (!previous.includePaths.contains(p))
+            added << p;
+    }
+    QStringList removed;
+    for (const QString &p : previous.includePaths) {
+        if (!m_options.includePaths.contains(p))
+            removed << p;
+    }
+
+    if (scanOptsChanged) {
+        const auto reply = QMessageBox::question(
+            this, tr("重建索引"),
+            tr("扫描相关设置已更改，是否立即全量重建索引？"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (reply == QMessageBox::Yes)
+            startIndexing(true);
+        else
+            applyWatcherOptions();
         return;
+    }
 
-    const auto reply = QMessageBox::question(
-        this,
-        tr("重建索引"),
-        tr("索引相关设置已更改，是否立即重建索引？"),
-        QMessageBox::Yes | QMessageBox::No,
-        QMessageBox::Yes);
+    for (const QString &p : removed)
+        m_db->removeUnderPrefix(p);
 
-    if (reply == QMessageBox::Yes)
-        startIndexing();
+    if (!removed.isEmpty()) {
+        m_db->setIncludePaths(m_options.includePaths);
+        persistIndexIfDirty();
+    }
+
+    if (!added.isEmpty()) {
+        const auto reply = QMessageBox::question(
+            this, tr("增量索引"),
+            tr("检测到新的索引目录，是否立即扫描这些目录？"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (reply == QMessageBox::Yes) {
+            startPartialIndex(added);
+            return;
+        }
+    }
+
+    applyWatcherOptions();
+    if (!m_searchEdit->text().trimmed().isEmpty())
+        runSearch(m_searchEdit->text());
 }
 
 void MainWindow::onQueryChanged(const QString &)
@@ -393,6 +581,23 @@ void MainWindow::onResultsReady(const QVector<FileEntry> &results, const QString
     }
 }
 
+void MainWindow::onWatchUpdated()
+{
+    m_saveTimer->start();
+    if (!m_searchEdit->text().trimmed().isEmpty())
+        runSearch(m_searchEdit->text());
+    else
+        m_statusLabel->setText(tr("索引已增量更新：%1 条").arg(m_db->count()));
+}
+
+void MainWindow::persistIndexIfDirty()
+{
+    if (!m_db->isDirty())
+        return;
+    if (m_db->saveToFile(indexFilePath()))
+        m_db->markClean();
+}
+
 void MainWindow::onFilterChanged(int)
 {
     runSearch(m_searchEdit->text());
@@ -405,6 +610,7 @@ void MainWindow::onCaseToggled(bool)
 
 void MainWindow::focusSearch()
 {
+    showFromTray();
     m_searchEdit->setFocus();
     m_searchEdit->selectAll();
 }
@@ -414,6 +620,31 @@ void MainWindow::clearSearch()
     if (m_searchEdit->hasFocus() || !m_searchEdit->text().isEmpty()) {
         m_searchEdit->clear();
         m_searchEdit->setFocus();
+    }
+}
+
+void MainWindow::showFromTray()
+{
+    showNormal();
+    raise();
+    activateWindow();
+    m_searchEdit->setFocus();
+    m_searchEdit->selectAll();
+}
+
+void MainWindow::quitApp()
+{
+    m_forceQuit = true;
+    close();
+}
+
+void MainWindow::onTrayActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+        if (isVisible())
+            hide();
+        else
+            showFromTray();
     }
 }
 
@@ -470,8 +701,25 @@ void MainWindow::copySelectedPath()
     m_statusLabel->setText(tr("已复制：%1").arg(e.fullPath()));
 }
 
+void MainWindow::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::WindowStateChange) {
+        if (isMinimized() && m_options.minimizeToTray && m_tray) {
+            QTimer::singleShot(0, this, [this]() { hide(); });
+        }
+    }
+    QMainWindow::changeEvent(event);
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (!m_forceQuit && m_options.minimizeToTray && m_tray) {
+        hide();
+        event->ignore();
+        return;
+    }
+
     saveSettings();
+    persistIndexIfDirty();
     QMainWindow::closeEvent(event);
 }

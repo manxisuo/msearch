@@ -7,6 +7,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -17,7 +18,7 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("设置"));
-    resize(560, 520);
+    resize(580, 620);
 
     auto *root = new QVBoxLayout(this);
 
@@ -43,7 +44,7 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
         tr("每行一条通配符，匹配文件名或完整路径（如 *.o、*/build/*）："), this));
     m_excludeEdit = new QPlainTextEdit(this);
     m_excludeEdit->setPlainText(options.excludePatterns.join(QLatin1Char('\n')));
-    m_excludeEdit->setMaximumHeight(100);
+    m_excludeEdit->setMaximumHeight(90);
     excludeLayout->addWidget(m_excludeEdit);
     root->addWidget(excludeGroup);
 
@@ -61,6 +62,25 @@ SettingsDialog::SettingsDialog(const IndexOptions &options, QWidget *parent)
     form->addRow(m_followSymlinks);
     form->addRow(tr("搜索结果上限"), m_maxResults);
     root->addWidget(optGroup);
+
+    auto *deskGroup = new QGroupBox(tr("桌面体验"), this);
+    auto *deskForm = new QFormLayout(deskGroup);
+    m_watchFs = new QCheckBox(tr("监控文件系统变更并增量更新索引"), this);
+    m_watchFs->setChecked(options.watchFilesystem);
+    m_minimizeTray = new QCheckBox(tr("关闭窗口时最小化到托盘"), this);
+    m_minimizeTray->setChecked(options.minimizeToTray);
+    m_startInTray = new QCheckBox(tr("启动时隐藏到托盘"), this);
+    m_startInTray->setChecked(options.startInTray);
+    m_autostart = new QCheckBox(tr("开机自动启动"), this);
+    m_autostart->setChecked(options.autostart);
+    m_hotkeyEdit = new QLineEdit(options.hotkey, this);
+    m_hotkeyEdit->setPlaceholderText(tr("例如 Ctrl+Alt+Space"));
+    deskForm->addRow(m_watchFs);
+    deskForm->addRow(m_minimizeTray);
+    deskForm->addRow(m_startInTray);
+    deskForm->addRow(m_autostart);
+    deskForm->addRow(tr("全局热键"), m_hotkeyEdit);
+    root->addWidget(deskGroup);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     root->addWidget(buttons);
@@ -87,6 +107,11 @@ IndexOptions SettingsDialog::options() const
     opt.skipHidden = m_skipHidden->isChecked();
     opt.followSymlinks = m_followSymlinks->isChecked();
     opt.maxResults = m_maxResults->value();
+    opt.watchFilesystem = m_watchFs->isChecked();
+    opt.minimizeToTray = m_minimizeTray->isChecked();
+    opt.startInTray = m_startInTray->isChecked();
+    opt.autostart = m_autostart->isChecked();
+    opt.hotkey = m_hotkeyEdit->text().trimmed();
     return opt;
 }
 

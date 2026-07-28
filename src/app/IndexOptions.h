@@ -1,11 +1,18 @@
 #pragma once
 
+#include <QString>
 #include <QStringList>
 
 struct IndexOptions {
     QStringList includePaths;
-    QStringList excludePatterns; // 名称或路径通配，如 *.o、*/.cache/*
+    QStringList excludePatterns;
     bool skipHidden = false;
     bool followSymlinks = false;
     int maxResults = 5000;
+
+    bool watchFilesystem = true;
+    bool minimizeToTray = true;
+    bool startInTray = false;
+    bool autostart = false;
+    QString hotkey = QStringLiteral("Ctrl+Alt+Space");
 };
