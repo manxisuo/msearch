@@ -224,6 +224,9 @@ void MainWindow::setupUi()
     m_statusLabel->setBackgroundRole(QPalette::Window);
     statusBar()->addWidget(m_statusLabel, 1);
     applyStatusBarStyle();
+    // UKUI may finish applying the theme after the first polish/show.
+    QTimer::singleShot(0, this, [this]() { applyStatusBarStyle(); });
+    QTimer::singleShot(100, this, [this]() { applyStatusBarStyle(); });
 
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
@@ -847,13 +850,41 @@ void MainWindow::applyStatusBarStyle()
     if (!m_statusLabel || !statusBar())
         return;
 
-    // UKUI/Kylin dark themes often leave QLabel text as black on a dark status bar.
-    const QColor bg = palette().color(QPalette::Window);
-    const double luma = 0.299 * bg.redF() + 0.587 * bg.greenF() + 0.114 * bg.blueF();
-    const QColor fg = (luma < 0.55) ? QColor(230, 230, 230) : QColor(32, 32, 32);
+    // UKUI/Kylin: status bar often looks dark while QLabel keeps black text.
+    auto luma = [](const QColor &c) {
+        return 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF();
+    };
+
+    const QPalette appPal = palette();
+    const QPalette sbPalIn = statusBar()->palette();
+    QColor bg = sbPalIn.color(QPalette::Window);
+    const QColor candidates[] = {
+        sbPalIn.color(QPalette::Window),
+        sbPalIn.color(QPalette::Button),
+        sbPalIn.color(QPalette::Mid),
+        appPal.color(QPalette::Window),
+        appPal.color(QPalette::Base),
+    };
+    for (const QColor &c : candidates) {
+        if (c.isValid() && luma(c) < luma(bg))
+            bg = c;
+    }
+
+    const QColor themeText = appPal.color(QPalette::WindowText);
+    const bool themeLooksDark =
+        luma(themeText) > 0.6 || luma(appPal.color(QPalette::Window)) < 0.55;
+    if (themeLooksDark && luma(bg) > 0.5)
+        bg = QColor(45, 45, 45);
+
+    const bool dark = themeLooksDark || luma(bg) < 0.55;
+    const QColor fg = dark ? QColor(235, 235, 235) : QColor(30, 30, 30);
+    if (dark && luma(bg) > 0.45)
+        bg = QColor(40, 40, 40);
 
     QPalette sbPal = statusBar()->palette();
     sbPal.setColor(QPalette::Window, bg);
+    sbPal.setColor(QPalette::Base, bg);
+    sbPal.setColor(QPalette::Button, bg);
     sbPal.setColor(QPalette::WindowText, fg);
     sbPal.setColor(QPalette::Text, fg);
     sbPal.setColor(QPalette::ButtonText, fg);
@@ -863,16 +894,24 @@ void MainWindow::applyStatusBarStyle()
     QPalette labelPal = m_statusLabel->palette();
     labelPal.setColor(QPalette::WindowText, fg);
     labelPal.setColor(QPalette::Text, fg);
+    labelPal.setColor(QPalette::Window, bg);
     m_statusLabel->setPalette(labelPal);
     m_statusLabel->setForegroundRole(QPalette::WindowText);
     m_statusLabel->setAutoFillBackground(false);
 
-    // Stylesheet beats broken theme inheritance for QLabel inside QStatusBar.
-    const QString css = QStringLiteral(
-        "QStatusBar { color: %1; background-color: %2; }"
-        "QStatusBar QLabel { color: %1; background: transparent; }")
-                            .arg(fg.name(), bg.name());
-    statusBar()->setStyleSheet(css);
+    // Explicit hex colors: more reliable than palette() under UKUI.
+    statusBar()->setStyleSheet(
+        QStringLiteral(
+            "QStatusBar {"
+            "  color: %1;"
+            "  background-color: %2;"
+            "}"
+            "QStatusBar::item { border: none; }"
+            "QStatusBar QLabel {"
+            "  color: %1;"
+            "  background-color: transparent;"
+            "}")
+            .arg(fg.name(), bg.name()));
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
