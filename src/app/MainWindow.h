@@ -37,6 +37,7 @@ public:
 protected:
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onQueryChanged(const QString &text);
@@ -84,6 +85,7 @@ private:
     void rememberQuery(const QString &query);
     void applyAutostart();
     void refreshBookmarkCombo();
+    void applyStatusBarStyle();
     QIcon appIcon() const;
     QString indexFilePath() const;
     FileEntry currentEntry() const;

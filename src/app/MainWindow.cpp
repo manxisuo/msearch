@@ -30,6 +30,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPalette>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSettings>
@@ -218,7 +219,11 @@ void MainWindow::setupUi()
     root->addWidget(m_table, 1);
 
     m_statusLabel = new QLabel(tr("就绪"), this);
+    m_statusLabel->setAutoFillBackground(false);
+    m_statusLabel->setForegroundRole(QPalette::WindowText);
+    m_statusLabel->setBackgroundRole(QPalette::Window);
     statusBar()->addWidget(m_statusLabel, 1);
+    applyStatusBarStyle();
 
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
@@ -830,8 +835,44 @@ void MainWindow::changeEvent(QEvent *event)
         if (isMinimized() && m_options.minimizeToTray && m_tray) {
             QTimer::singleShot(0, this, [this]() { hide(); });
         }
+    } else if (event->type() == QEvent::PaletteChange
+               || event->type() == QEvent::StyleChange) {
+        applyStatusBarStyle();
     }
     QMainWindow::changeEvent(event);
+}
+
+void MainWindow::applyStatusBarStyle()
+{
+    if (!m_statusLabel || !statusBar())
+        return;
+
+    // UKUI/Kylin dark themes often leave QLabel text as black on a dark status bar.
+    const QColor bg = palette().color(QPalette::Window);
+    const double luma = 0.299 * bg.redF() + 0.587 * bg.greenF() + 0.114 * bg.blueF();
+    const QColor fg = (luma < 0.55) ? QColor(230, 230, 230) : QColor(32, 32, 32);
+
+    QPalette sbPal = statusBar()->palette();
+    sbPal.setColor(QPalette::Window, bg);
+    sbPal.setColor(QPalette::WindowText, fg);
+    sbPal.setColor(QPalette::Text, fg);
+    sbPal.setColor(QPalette::ButtonText, fg);
+    statusBar()->setPalette(sbPal);
+    statusBar()->setAutoFillBackground(true);
+
+    QPalette labelPal = m_statusLabel->palette();
+    labelPal.setColor(QPalette::WindowText, fg);
+    labelPal.setColor(QPalette::Text, fg);
+    m_statusLabel->setPalette(labelPal);
+    m_statusLabel->setForegroundRole(QPalette::WindowText);
+    m_statusLabel->setAutoFillBackground(false);
+
+    // Stylesheet beats broken theme inheritance for QLabel inside QStatusBar.
+    const QString css = QStringLiteral(
+        "QStatusBar { color: %1; background-color: %2; }"
+        "QStatusBar QLabel { color: %1; background: transparent; }")
+                            .arg(fg.name(), bg.name());
+    statusBar()->setStyleSheet(css);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
